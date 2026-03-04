@@ -52,6 +52,24 @@ window.addEventListener("resize", resize)
 resize()
 
 ////////////////////////////////////////////////////
+// AUDIO
+////////////////////////////////////////////////////
+const sounds = {
+  swap: new Audio("https://actions.google.com/sounds/v1/cartoon/swish_2.ogg"),
+  match: new Audio("https://actions.google.com/sounds/v1/cartoon/pop.ogg"),
+  hit: new Audio("https://actions.google.com/sounds/v1/impact/footstep_on_metal_plate.ogg"),
+  death: new Audio("https://actions.google.com/sounds/v1/foley/beating_wings.ogg")
+}
+
+function playSound(name) {
+  const sound = sounds[name]
+  if (sound) {
+    sound.currentTime = 0
+    sound.play().catch(() => {})
+  }
+}
+
+////////////////////////////////////////////////////
 // GAME STATE
 ////////////////////////////////////////////////////
 let board = []
@@ -217,8 +235,8 @@ function selectTile(tile) {
 // SWAP
 ////////////////////////////////////////////////////
 function swapTiles(a, b, revert = false) {
-
   isProcessing = true
+  if (!revert) playSound("swap")
 
   animateMove(a.sprite, b.col * CELL_SIZE, b.row * CELL_SIZE)
   animateMove(b.sprite, a.col * CELL_SIZE, a.row * CELL_SIZE)
@@ -235,7 +253,6 @@ function swapTiles(a, b, revert = false) {
   b.col = tempCol
 
   setTimeout(() => {
-
     const matches = findMatches()
 
     if (matches.length === 0 && !revert) {
@@ -248,7 +265,6 @@ function swapTiles(a, b, revert = false) {
     } else {
       isProcessing = false
     }
-
   }, 250)
 }
 
@@ -297,6 +313,10 @@ function findMatches() {
 ////////////////////////////////////////////////////
 function removeMatches(matches) {
   combo++
+  playSound("match")
+  if (combo > 1) showComboText(combo)
+  if (combo >= 3) screenShake(10, 200)
+
   const damage = matches.length * hero.attack * combo
   enemy.hp -= damage
   
@@ -305,17 +325,18 @@ function removeMatches(matches) {
   }
 
   drawHPBars()
+  flashEffect(enemyHPBar, 0xffffff)
+  showDamageText(enemyHPBar.x + 300, enemyHPBar.y, damage, 0xff3b3b)
   
   matches.forEach(tile => {
     score += 100 * combo
-    showFloatingScore(tile.sprite.x, tile.sprite.y, 100 * combo)
     gridContainer.removeChild(tile.sprite)
     board[tile.row][tile.col] = null
   })
 
   scoreText.text = "Score: " + score
   
-  // Wait for score animations before gravity
+  // Wait for animations before gravity
   setTimeout(applyGravity, 250)
 }
 
@@ -397,6 +418,91 @@ function checkChain() {
 }
 
 ////////////////////////////////////////////////////
+// FX UTILS
+////////////////////////////////////////////////////
+function showDamageText(x, y, amount, color) {
+  const text = new PIXI.Text(amount, {
+    fontFamily: "Arial",
+    fontSize: 64,
+    fill: color,
+    fontWeight: "bold",
+    stroke: 0x000000,
+    strokeThickness: 6
+  })
+  text.anchor.set(0.5)
+  text.x = x
+  text.y = y
+  app.stage.addChild(text)
+
+  let life = 0
+  const float = () => {
+    text.y -= 2
+    text.alpha -= 0.02
+    life++
+    if (life > 50) {
+      app.stage.removeChild(text)
+      app.ticker.remove(float)
+    }
+  }
+  app.ticker.add(float)
+}
+
+function flashEffect(graphic, color) {
+  const originalTint = graphic.tint
+  graphic.tint = color
+  setTimeout(() => {
+    graphic.tint = originalTint
+  }, 100)
+}
+
+let comboText = null
+function showComboText(n) {
+  if (comboText) app.stage.removeChild(comboText)
+  comboText = new PIXI.Text("COMBO x" + n, {
+    fontFamily: "Arial",
+    fontSize: 80,
+    fill: 0xffd93d,
+    fontWeight: "bold",
+    stroke: 0x000000,
+    strokeThickness: 8
+  })
+  comboText.anchor.set(0.5)
+  comboText.x = BASE_WIDTH / 2
+  comboText.y = BASE_HEIGHT / 2
+  app.stage.addChild(comboText)
+
+  let life = 0
+  const anim = () => {
+    comboText.scale.set(1 + Math.sin(life * 0.2) * 0.1)
+    comboText.alpha -= 0.02
+    life++
+    if (life > 50) {
+      if (comboText.parent) app.stage.removeChild(comboText)
+      app.ticker.remove(anim)
+    }
+  }
+  app.ticker.add(anim)
+}
+
+function screenShake(intensity, duration) {
+  const originalX = app.stage.x
+  const originalY = app.stage.y
+  let elapsed = 0
+  const shake = (delta) => {
+    elapsed += app.ticker.elapsedMS
+    if (elapsed >= duration) {
+      app.stage.x = originalX
+      app.stage.y = originalY
+      app.ticker.remove(shake)
+      return
+    }
+    app.stage.x = originalX + (Math.random() - 0.5) * intensity
+    app.stage.y = originalY + (Math.random() - 0.5) * intensity
+  }
+  app.ticker.add(shake)
+}
+
+////////////////////////////////////////////////////
 // ANIMATION
 ////////////////////////////////////////////////////
 function animateMove(sprite, targetX, targetY) {
@@ -424,29 +530,7 @@ function animateMove(sprite, targetX, targetY) {
 // FLOATING SCORE
 ////////////////////////////////////////////////////
 function showFloatingScore(x, y, value) {
-
-  const text = new PIXI.Text("+" + value, {
-    fontFamily: "Arial",
-    fontSize: 48,
-    fill: 0xffffff
-  })
-
-  text.x = x
-  text.y = y
-  gridContainer.addChild(text)
-
-  let life = 0
-
-  app.ticker.add(function float() {
-    text.y -= 2
-    text.alpha -= 0.02
-    life++
-
-    if (life > 50) {
-      gridContainer.removeChild(text)
-      app.ticker.remove(float)
-    }
-  })
+  showDamageText(x, y, "+" + value, 0xffffff)
 }
 
 ////////////////////////////////////////////////////
@@ -462,7 +546,9 @@ function enemyTurn() {
     if (hero.hp < 0) hero.hp = 0;
     
     drawHPBars();
-    showFloatingScore(heroHPBar.x + 300, heroHPBar.y, "-" + enemy.attack);
+    playSound("hit")
+    flashEffect(heroHPBar, 0xff0000)
+    showDamageText(heroHPBar.x + 300, heroHPBar.y, enemy.attack, 0x3bff6a)
     
     if (hero.hp <= 0) {
       gameOver();
@@ -474,10 +560,12 @@ function enemyTurn() {
 
 function handleEnemyDeath() {
   isProcessing = true;
+  playSound("death")
+  screenShake(20, 500)
   
   const expGained = 25;
   hero.exp += expGained;
-  showFloatingScore(enemyHPBar.x + 300, enemyHPBar.y, "+" + expGained + " EXP");
+  showDamageText(enemyHPBar.x + 300, enemyHPBar.y, "EXP +" + expGained, 0xffffff)
   
   if (hero.exp >= hero.expToLevel) {
     levelUp();
