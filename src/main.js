@@ -75,6 +75,9 @@ let enemy = {
   attack: 8
 };
 
+let gameOverText = null;
+let restartButton = null;
+
 ////////////////////////////////////////////////////
 // UI
 ////////////////////////////////////////////////////
@@ -293,7 +296,6 @@ function findMatches() {
 // REMOVE
 ////////////////////////////////////////////////////
 function removeMatches(matches) {
-
   combo++
   const damage = matches.length * hero.attack * combo
   enemy.hp -= damage
@@ -312,7 +314,8 @@ function removeMatches(matches) {
   })
 
   scoreText.text = "Score: " + score
-
+  
+  // Wait for score animations before gravity
   setTimeout(applyGravity, 250)
 }
 
@@ -373,17 +376,22 @@ function spawnTiles() {
 // CHAIN
 ////////////////////////////////////////////////////
 function checkChain() {
-
   const matches = findMatches()
 
   if (matches.length > 0) {
     removeMatches(matches)
   } else {
+    const lastCombo = combo
     combo = 0
-    if (enemy.hp <= 0) {
-      handleEnemyDeath()
-    } else {
-      enemyTurn()
+    isProcessing = false
+    
+    // Only trigger turn if a move was actually made (combo > 0)
+    if (lastCombo > 0) {
+      if (enemy.hp <= 0) {
+        handleEnemyDeath()
+      } else {
+        enemyTurn()
+      }
     }
   }
 }
@@ -445,11 +453,10 @@ function showFloatingScore(x, y, value) {
 // COMBAT LOGIC
 ////////////////////////////////////////////////////
 function enemyTurn() {
-  if (enemy.hp <= 0) return;
+  if (isProcessing || enemy.hp <= 0 || hero.hp <= 0) return;
 
   isProcessing = true;
   
-  // Simple enemy attack animation (shake hero HP bar or just delay)
   setTimeout(() => {
     hero.hp -= enemy.attack;
     if (hero.hp < 0) hero.hp = 0;
@@ -457,7 +464,11 @@ function enemyTurn() {
     drawHPBars();
     showFloatingScore(heroHPBar.x + 300, heroHPBar.y, "-" + enemy.attack);
     
-    isProcessing = false;
+    if (hero.hp <= 0) {
+      gameOver();
+    } else {
+      isProcessing = false;
+    }
   }, 1000);
 }
 
@@ -496,6 +507,86 @@ function levelUp() {
   
   showFloatingScore(heroHPBar.x + 100, heroHPBar.y - 50, "LEVEL UP! Lvl " + hero.level);
   drawHPBars();
+}
+
+function gameOver() {
+  isProcessing = true;
+  
+  gameOverText = new PIXI.Text("GAME OVER", {
+    fontFamily: "Arial",
+    fontSize: 120,
+    fill: 0xff3b3b,
+    fontWeight: "bold"
+  });
+  gameOverText.anchor.set(0.5);
+  gameOverText.x = BASE_WIDTH / 2;
+  gameOverText.y = BASE_HEIGHT / 2 - 100;
+  app.stage.addChild(gameOverText);
+
+  restartButton = new PIXI.Graphics();
+  restartButton.beginFill(0xffffff);
+  restartButton.drawRoundedRect(0, 0, 300, 100, 20);
+  restartButton.endFill();
+  restartButton.x = BASE_WIDTH / 2 - 150;
+  restartButton.y = BASE_HEIGHT / 2 + 50;
+  restartButton.eventMode = "static";
+  restartButton.cursor = "pointer";
+  
+  const btnText = new PIXI.Text("RESTART", {
+    fontFamily: "Arial",
+    fontSize: 48,
+    fill: 0x000000
+  });
+  btnText.anchor.set(0.5);
+  btnText.x = 150;
+  btnText.y = 50;
+  restartButton.addChild(btnText);
+  
+  restartButton.on("pointerdown", resetGame);
+  app.stage.addChild(restartButton);
+}
+
+function resetGame() {
+  if (gameOverText) app.stage.removeChild(gameOverText);
+  if (restartButton) app.stage.removeChild(restartButton);
+  gameOverText = null;
+  restartButton = null;
+  
+  hero.maxHP = 100;
+  hero.hp = 100;
+  hero.attack = 10;
+  hero.level = 1;
+  hero.exp = 0;
+  hero.expToLevel = 50;
+  
+  enemy.maxHp = 250;
+  enemy.hp = 250;
+  enemy.attack = 8;
+  
+  score = 0;
+  combo = 0;
+  scoreText.text = "Score: 0";
+  
+  drawHPBars();
+  
+  // Clear and reset board
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      if (board[row] && board[row][col]) {
+        gridContainer.removeChild(board[row][col].sprite);
+      }
+    }
+  }
+  
+  for (let row = 0; row < ROWS; row++) {
+    board[row] = []
+    for (let col = 0; col < COLS; col++) {
+      const type = Math.floor(Math.random() * COLORS.length);
+      board[row][col] = createTile(row, col, type);
+    }
+  }
+  
+  isProcessing = false;
 }
 
 ////////////////////////////////////////////////////
